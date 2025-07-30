@@ -107,8 +107,8 @@ function ClaudeCodeLauncher({ item }: { item: FileSystemItem }) {
   const escapedCommand = simpleCommand.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
   console.log("Escaped command:", escapedCommand);
   console.log("Full osascript command:", `tell application "Terminal" to do script "${escapedCommand}"`);
-  
-  const { isLoading, error: launchError, data } = useExec(
+
+  const { isLoading, error: launchError } = useExec(
     "osascript",
     ["-e", `tell application "Terminal" to do script "${escapedCommand}"`],
     {

@@ -4,31 +4,61 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Raycast extension called "Claude Code" that provides basic commands for interacting with Claude. The extension is built using TypeScript and the Raycast API.
+This is a Raycast extension called "Claude Code" that provides commands for integrating with the Claude Code CLI. The extension allows users to launch Claude Code CLI from Finder selections and search through Claude coding sessions.
 
 ## Development Commands
 
-- `npm run dev` - Start development mode for the extension
-- `npm run build` - Build the extension for production
-- `npm run lint` - Run ESLint to check code quality
-- `npm run fix-lint` - Automatically fix ESLint issues
-- `npm run publish` - Publish extension to Raycast Store
+- `npm run dev` - Start development mode for the extension with live reload
+- `npm run build` - Build the extension for production using `ray build`
+- `npm run lint` - Run ESLint to check code quality using `ray lint`
+- `npm run fix-lint` - Automatically fix ESLint issues using `ray lint --fix`
+- `npm run publish` - Publish extension to Raycast Store using `@raycast/api publish`
 
 ## Architecture
 
-### Project Structure
-- `src/` - Source code directory containing TypeScript files
-- `assets/` - Static assets including the extension icon
-- Individual command files are placed directly in `src/`
+### Core Components
 
-### Raycast Extension Commands
-Commands are defined in `package.json` under the `commands` array. Each command corresponds to a TypeScript file in the `src/` directory that exports a default function.
+**Main Commands**:
+- **sessionSearch** (`src/sessionSearch.ts`) - Currently a placeholder that copies the current date to clipboard
+- **launchWithCC** (`src/launchWithCC.tsx`) - Main integration command that launches Claude Code CLI with Finder selections
 
-Current commands:
-- `search-sessions` - Simple command that copies the current date to clipboard and shows a HUD message
+**Key Features**:
+- **Finder Integration**: Uses `getSelectedFinderItems()` from Raycast API to get current Finder selection
+- **Terminal Automation**: Executes AppleScript via `osascript` to open Terminal and run Claude Code CLI
+- **Path Handling**: Intelligently determines target directory (parent dir for files, direct path for directories)
+- **Error Handling**: Provides helpful error messages and fallback manual commands
 
-### Development Notes
-- Uses standard Raycast extension configuration with TypeScript
-- ESLint configuration extends from `@raycast/eslint-config`
-- Target ES2023 with CommonJS modules
-- React JSX support enabled for Raycast UI components
+### Claude Code CLI Integration
+
+The extension integrates with Claude Code CLI through Terminal automation:
+
+**Command Pattern**: `cd "{targetDir}" && claude --add-dir "{itemPath}"`
+
+**Path Resolution Logic**:
+- For files: Navigate to parent directory, add file path to Claude
+- For directories: Navigate to directory, add directory path to Claude
+- Handles path escaping for AppleScript execution
+
+**Execution Flow**:
+1. Get Finder selection using Raycast API
+2. Determine target directory and item path
+3. Construct and escape shell command
+4. Execute via AppleScript to open Terminal
+5. Provide user feedback through Toast notifications
+
+### Development Architecture
+
+**File Structure**:
+- `src/` - TypeScript source files (both `.ts` and `.tsx`)
+- `assets/` - Static assets including extension icon
+- Several placeholder files exist for future features (hooksCreator, sessionManager, etc.)
+
+**Configuration**:
+- Commands defined in `package.json` under `commands` array
+- Each command maps to a corresponding TypeScript file
+- Uses `@raycast/api` and `@raycast/utils` for core functionality
+- ESLint configuration extends `@raycast/eslint-config`
+
+**Command Types**:
+- `no-view` commands (sessionSearch) - Execute without UI
+- `view` commands (launchWithCC) - Present interactive UI

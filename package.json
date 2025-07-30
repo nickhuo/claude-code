@@ -11,12 +11,18 @@
       "name": "sessionSearch",
       "title": "Search Sessions",
       "description": "Search for Claude Code previous sessions",
-      "mode": "no-view"
+      "mode": "view"
     },
     {
       "name": "launchWithCC",
       "title": "Open with Claude Code",
       "description": "Launch Claude Code CLI with current file or directory context from Finder",
+      "mode": "view"
+    },
+    {
+      "name": "launchProjects",
+      "title": "Launch Claude Projects",
+      "description": "Browse and launch Claude Code with your recent projects",
       "mode": "view"
     }
   ],
