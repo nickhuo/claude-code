@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Raycast extension called "Claude Code" that provides commands for integrating with the Claude Code CLI. The extension allows users to launch Claude Code CLI from Finder selections and search through Claude coding sessions.
+This is a sophisticated Raycast extension called "Claude Code" that provides comprehensive integration with the Claude Code CLI. The extension offers five advanced commands for session management, project launching, and extensibility through custom commands and subagents.
 
 ## Development Commands
 
@@ -16,49 +16,133 @@ This is a Raycast extension called "Claude Code" that provides commands for inte
 
 ## Architecture
 
-### Core Components
+### Core Commands (5 Commands)
 
-**Main Commands**:
-- **sessionSearch** (`src/sessionSearch.ts`) - Currently a placeholder that copies the current date to clipboard
-- **launchWithCC** (`src/launchWithCC.tsx`) - Main integration command that launches Claude Code CLI with Finder selections
+**`sessionSearch`** (`src/sessionSearch.tsx`) - Advanced Claude Code session browser
+- Parses JSONL session files from `~/.claude/projects`
+- Implements intelligent file filtering (5MB limit, 15 most recent files)
+- Provides search functionality across session descriptions and directories
+- Enables session resumption with `claude -r` command
+- Handles timeout protection (10-second limit) and memory management
 
-**Key Features**:
-- **Finder Integration**: Uses `getSelectedFinderItems()` from Raycast API to get current Finder selection
-- **Terminal Automation**: Executes AppleScript via `osascript` to open Terminal and run Claude Code CLI
-- **Path Handling**: Intelligently determines target directory (parent dir for files, direct path for directories)
-- **Error Handling**: Provides helpful error messages and fallback manual commands
+**`launchWithCC`** (`src/launchWithCC.tsx`) - Enhanced Finder integration
+- Multi-file/directory selection support from Finder
+- Intelligent path resolution (parent dir for files, direct path for directories)
+- AppleScript automation for Terminal launching
+- Robust error handling with fallback manual commands
+- Real-time execution feedback with Toast notifications
+
+**`launchProjects`** (`src/launchProjects.tsx`) - Project management system
+- Scans `~/.claude/projects` for project directories
+- Extracts project paths from JSONL session files
+- Displays project availability status (exists/missing)
+- Provides project launching with directory navigation
+- Sorts by last activity with human-readable timestamps
+
+**`userCommandManager`** (`src/userCommandManager.tsx`) - Custom command system
+- Creates and manages custom commands in `~/.claude/commands`
+- Supports both Markdown (.md) and YAML (.yaml/.yml) formats
+- YAML frontmatter parsing for metadata
+- Custom parameter system with array support
+- File system operations with validation and error handling
+
+**`userAgentsManager`** (`src/userAgentsManager.tsx`) - Subagent management
+- Creates and manages Claude Code subagents in `~/.claude/agents`
+- Tool specification system with available tools validation
+- Color-coded agent organization (8 color options)
+- Advanced form handling with custom parameters
+- System prompt editing for agent behavior customization
+
+### Advanced Features
+
+**Session Management**:
+- JSONL parsing with malformed line handling
+- Memory-efficient processing (sequential file processing)
+- Session metadata extraction (ID, directory, timestamps, descriptions)
+- Intelligent description generation from session content
+- Resume functionality with proper command escaping
+
+**File System Integration**:
+- AppleScript automation for Terminal control
+- Path escaping and sanitization for shell commands
+- Multi-platform file path handling (macOS-focused)
+- Directory existence validation and status reporting
+- Recursive directory scanning with error recovery
+
+**Extensibility Framework**:
+- Plugin-like command and agent creation systems
+- Metadata-driven configuration with custom parameters
+- File format flexibility (Markdown with YAML frontmatter, pure YAML)
+- Tool restriction and validation systems
+- Form-based creation and editing interfaces
 
 ### Claude Code CLI Integration
 
-The extension integrates with Claude Code CLI through Terminal automation:
+The extension integrates with Claude Code CLI through multiple patterns:
 
-**Command Pattern**: `cd "{targetDir}" && claude --add-dir "{itemPath}"`
+**Command Patterns**:
+- `cd "{targetDir}" && claude --add-dir "{itemPath}"` (launch with context)
+- `cd "{directory}" && claude -r "{sessionId}"` (resume session)
+- `claude --add-dir "{projectPath}"` (launch project)
 
 **Path Resolution Logic**:
-- For files: Navigate to parent directory, add file path to Claude
-- For directories: Navigate to directory, add directory path to Claude
-- Handles path escaping for AppleScript execution
+- Files: Navigate to parent directory, add file path to Claude context
+- Directories: Navigate directly to directory, add directory path to Claude context
+- Projects: Extract working directory from session JSONL files
+- Handles complex path escaping for AppleScript execution
 
 **Execution Flow**:
-1. Get Finder selection using Raycast API
-2. Determine target directory and item path
-3. Construct and escape shell command
-4. Execute via AppleScript to open Terminal
-5. Provide user feedback through Toast notifications
+1. Context detection (Finder selection, session choice, project selection)
+2. Path validation and resolution with error handling
+3. Command construction with proper escaping
+4. AppleScript execution through `osascript` command
+5. Real-time feedback through Raycast Toast notifications
+6. Error recovery with manual command fallbacks
 
 ### Development Architecture
 
 **File Structure**:
-- `src/` - TypeScript source files (both `.ts` and `.tsx`)
-- `assets/` - Static assets including extension icon
-- Several placeholder files exist for future features (hooksCreator, sessionManager, etc.)
+- `src/` - TypeScript React components (all `.tsx` except for types)
+- `assets/` - Static assets including high-resolution extension icon
+- `package.json` - Command definitions and dependency management
+- `tsconfig.json` - TypeScript configuration with React JSX support
 
-**Configuration**:
-- Commands defined in `package.json` under `commands` array
-- Each command maps to a corresponding TypeScript file
+**Configuration System**:
+- Commands defined in `package.json` commands array
+- Each command maps to corresponding TypeScript file
 - Uses `@raycast/api` and `@raycast/utils` for core functionality
-- ESLint configuration extends `@raycast/eslint-config`
+- ESLint extends `@raycast/eslint-config` for code quality
 
-**Command Types**:
-- `no-view` commands (sessionSearch) - Execute without UI
-- `view` commands (launchWithCC) - Present interactive UI
+**Command Architecture**:
+- All commands use `view` mode for rich interactive UI
+- React hooks for state management (`useState`, `useEffect`)
+- Async operations with proper error boundaries
+- ActionPanel system for keyboard shortcuts and actions
+- Toast notification system for user feedback
+
+**Error Handling Patterns**:
+- Graceful degradation with helpful error messages
+- Timeout protection for long-running operations
+- File system error recovery with user-friendly messaging
+- Validation systems for user input and file formats
+- Fallback mechanisms for CLI execution failures
+
+### Data Persistence
+
+**Session Data**:
+- Reads from `~/.claude/projects/{encoded-dir-name}/*.jsonl`
+- Parses session entries with timestamp and metadata extraction
+- Implements file size limits and processing timeouts
+- Memory management with garbage collection hints
+
+**User Configuration**:
+- Custom commands stored in `~/.claude/commands/`
+- Subagents stored in `~/.claude/agents/`
+- Supports nested directory organization
+- Automatic directory creation with recursive mkdir
+
+**File Format Support**:
+- JSONL for session data (Claude Code CLI format)
+- Markdown with YAML frontmatter for user content
+- Pure YAML for configuration files
+- JSON for package configuration and metadata
