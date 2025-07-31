@@ -1,7 +1,7 @@
-import { List, ActionPanel, Action, showToast, Toast, Icon } from "@raycast/api";
+import { List, ActionPanel, Action, showToast, Toast, Icon, confirmAlert, Alert } from "@raycast/api";
 import { useState, useEffect } from "react";
-import { readdir, readFile, stat } from "fs/promises";
-import { join } from "path";
+import { readdir, readFile, stat, unlink } from "fs/promises";
+import { join, basename } from "path";
 import { homedir } from "os";
 import {
   executeInTerminal,
@@ -28,6 +28,7 @@ interface Session {
   timestamp: Date;
   lastActivity: Date;
   filePath: string;
+  isErrorSession: boolean;
 }
 
 interface SessionFileInfo {
@@ -38,6 +39,12 @@ interface SessionFileInfo {
 
 // Global loading state to prevent duplicate calls
 let isGlobalLoading = false;
+
+// Utility function to extract project name from directory path
+const getProjectName = (directoryPath: string): string => {
+  // Use the same logic as launchProjects.tsx to extract project name
+  return basename(directoryPath) || directoryPath;
+};
 
 export default function SessionSearch() {
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -81,10 +88,10 @@ export default function SessionSearch() {
         throw new Error("Session loading timeout");
       }
 
-      // Sort by modification time and take only the 15 most recent
+      // Sort by modification time and take more files for parsing to ensure we have enough valid sessions
       const recentFiles = allSessionFiles
         .sort((a, b) => b.modifiedTime.getTime() - a.modifiedTime.getTime())
-        .slice(0, 15);
+        .slice(0, 100);
 
       console.log(`Loading ${recentFiles.length} most recent session files...`);
       console.log(
@@ -93,7 +100,7 @@ export default function SessionSearch() {
       );
 
       // Process files sequentially to avoid memory spikes
-      const sessions: Session[] = [];
+      const allSessions: Session[] = [];
       for (const fileInfo of recentFiles) {
         // Check timeout before processing each file
         if (Date.now() - startTime > TIMEOUT_MS) {
@@ -106,7 +113,7 @@ export default function SessionSearch() {
           const session = await parseSessionFile(fileInfo.filePath);
           if (session) {
             console.log(`✅ Successfully parsed session: ${session.id}`);
-            sessions.push(session);
+            allSessions.push(session);
           } else {
             console.log(`❌ Failed to parse session from: ${fileInfo.filePath.split("/").pop()}`);
           }
@@ -121,8 +128,14 @@ export default function SessionSearch() {
         }
       }
 
-      setSessions(sessions);
-      console.log(`Loaded ${sessions.length} sessions in ${Date.now() - startTime}ms`);
+      // Filter out error sessions and take only the 30 most recent valid ones
+      const validSessions = allSessions
+        .filter(session => !session.isErrorSession)
+        .sort((a, b) => b.lastActivity.getTime() - a.lastActivity.getTime())
+        .slice(0, 30);
+
+      setSessions(validSessions);
+      console.log(`Loaded ${validSessions.length} valid sessions in ${Date.now() - startTime}ms`);
     } catch (err) {
       console.error("Error loading sessions:", err);
       if (err instanceof Error && err.message.includes("timeout")) {
@@ -154,7 +167,7 @@ export default function SessionSearch() {
                 const stats = await stat(filePath);
 
                 // Skip files larger than 50MB to avoid memory issues
-                const maxFileSize = 50 * 1024 * 1024; // 50MB
+                const maxFileSize = 10 * 1024 * 1024; // 50MB
                 if (stats.size > maxFileSize) {
                   console.log(`Skipping large file: ${filePath} (${(stats.size / 1024 / 1024).toFixed(1)}MB)`);
                   continue;
@@ -222,8 +235,14 @@ export default function SessionSearch() {
           // Look for summary entries or meaningful descriptions
           if (entry.type === "summary" && entry.summary) {
             description = entry.summary;
-            // Check if this is an error session
-            if (entry.summary.includes("Invalid API key") || entry.summary.includes("Please run /login")) {
+            // Check if this is an error session - expanded patterns
+            if (
+              entry.summary.includes("Invalid API key") ||
+              entry.summary.includes("Please run /login") ||
+              entry.summary.includes("authentication") ||
+              entry.summary.includes("login") ||
+              entry.summary.includes("API key")
+            ) {
               isErrorSession = true;
             }
           } else if (entry.message?.content && description === "Claude Code Session") {
@@ -257,7 +276,17 @@ export default function SessionSearch() {
 
       // For error sessions, provide better description and default directory
       if (isErrorSession) {
-        description = "❌ " + description;
+        // Provide more actionable error descriptions
+        if (description.includes("Invalid API key") || description.includes("API key")) {
+          description = "❌ Authentication failed - Invalid API key";
+        } else if (description.includes("Please run /login") || description.includes("login")) {
+          description = "❌ Authentication required - Run 'claude login'";
+        } else if (description.includes("authentication")) {
+          description = "❌ Authentication error - Check Claude setup";
+        } else {
+          description = "❌ " + description;
+        }
+
         if (!directory) {
           directory = "~"; // Default directory for failed sessions
         }
@@ -280,6 +309,7 @@ export default function SessionSearch() {
         timestamp,
         lastActivity: lastActivity.getTime() > 0 ? lastActivity : timestamp,
         filePath,
+        isErrorSession,
       };
     } catch (err) {
       console.error(`Error parsing session file ${filePath}:`, err);
@@ -300,18 +330,63 @@ export default function SessionSearch() {
     return `${Math.floor(diffDays / 30)}mo ago`;
   };
 
-  const getDirectoryName = (path: string): string => {
-    const parts = path.split("/");
-    return parts[parts.length - 1] || path;
+
+
+  const deleteSessionFile = async (session: Session): Promise<boolean> => {
+    try {
+      // Confirm deletion with user
+      const confirmed = await confirmAlert({
+        title: "Delete Session",
+        message: `Are you sure you want to delete this session?\n\n"${session.description}"\n\nThis action cannot be undone.`,
+        primaryAction: {
+          title: "Delete",
+          style: Alert.ActionStyle.Destructive,
+        },
+        dismissAction: {
+          title: "Cancel",
+          style: Alert.ActionStyle.Cancel,
+        },
+      });
+
+      if (!confirmed) {
+        return false;
+      }
+
+      // Delete the session file
+      await unlink(session.filePath);
+
+      // Show success toast
+      await showToast({
+        style: Toast.Style.Success,
+        title: "Session Deleted",
+        message: `Successfully deleted session: ${session.description.slice(0, 50)}${session.description.length > 50 ? "..." : ""}`,
+      });
+
+      // Refresh sessions list
+      await loadSessions();
+
+      return true;
+    } catch (error) {
+      console.error("Error deleting session file:", error);
+
+      await showToast({
+        style: Toast.Style.Failure,
+        title: "Delete Failed",
+        message: error instanceof Error ? error.message : "Failed to delete session file",
+      });
+
+      return false;
+    }
   };
 
   const filteredSessions = sessions.filter((session) => {
+    // Apply search filter only (error sessions already filtered out in loadSessions)
     if (!searchText) return true;
     const query = searchText.toLowerCase();
     return (
       session.description.toLowerCase().includes(query) ||
       session.directory.toLowerCase().includes(query) ||
-      getDirectoryName(session.directory).toLowerCase().includes(query)
+      getProjectName(session.directory).toLowerCase().includes(query)
     );
   });
 
@@ -364,64 +439,53 @@ export default function SessionSearch() {
       searchBarPlaceholder="Search Claude Code sessions..."
       navigationTitle="Claude Code Sessions"
     >
-      {filteredSessions.map((session) => {
-        const isErrorSession = session.description.includes("❌");
-        return (
-          <List.Item
-            key={session.id}
-            title={session.description}
-            subtitle={getDirectoryName(session.directory)}
-            accessories={[{ text: formatTimeAgo(session.lastActivity) }]}
-            icon={isErrorSession ? Icon.ExclamationMark : Icon.Message}
-            actions={
-              <ActionPanel>
-                {!isErrorSession && <ResumeSessionAction session={session} />}
-                {isErrorSession && (
-                  <Action
-                    title="Session Failed - Check Claude Code Setup"
-                    onAction={async () => {
-                      await showToast({
-                        style: Toast.Style.Failure,
-                        title: "Session Error",
-                        message: "This session failed due to authentication issues. Run 'claude login' to fix.",
-                      });
-                    }}
-                    icon={Icon.ExclamationMark}
-                  />
-                )}
-                <Action.CopyToClipboard
-                  title="Copy Claude Command"
-                  content={isErrorSession ? `claude login` : `cd "${session.directory}" && claude -r "${session.id}"`}
-                  shortcut={{ modifiers: ["cmd"], key: "return" }}
-                />
-                <Action.CopyToClipboard
-                  title="Copy Session ID"
-                  content={session.id}
-                  shortcut={{ modifiers: ["cmd"], key: "c" }}
-                />
-                {!isErrorSession && (
-                  <Action.CopyToClipboard
-                    title="Copy Directory Path"
-                    content={session.directory}
-                    shortcut={{ modifiers: ["cmd", "shift"], key: "c" }}
-                  />
-                )}
-                <Action
-                  title="Show Full Description"
-                  onAction={async () => {
-                    await showToast({
-                      style: Toast.Style.Animated,
-                      title: "Session Description",
-                      message: session.description,
-                    });
-                  }}
-                  shortcut={{ modifiers: ["cmd"], key: "i" }}
-                />
-              </ActionPanel>
-            }
-          />
-        );
-      })}
+      {filteredSessions.map((session) => (
+        <List.Item
+          key={session.id}
+          title={session.description}
+          subtitle={getProjectName(session.directory)}
+          accessories={[{ text: formatTimeAgo(session.lastActivity) }]}
+          icon={Icon.Message}
+          actions={
+            <ActionPanel>
+              <ResumeSessionAction session={session} />
+              <Action.CopyToClipboard
+                title="Copy Claude Command"
+                content={`cd "${session.directory}" && claude -r "${session.id}"`}
+                shortcut={{ modifiers: ["cmd"], key: "return" }}
+              />
+              <Action.CopyToClipboard
+                title="Copy Session ID"
+                content={session.id}
+                shortcut={{ modifiers: ["cmd"], key: "c" }}
+              />
+              <Action.CopyToClipboard
+                title="Copy Directory Path"
+                content={session.directory}
+                shortcut={{ modifiers: ["cmd", "shift"], key: "c" }}
+              />
+              <Action
+                title="Show Full Description"
+                onAction={async () => {
+                  await showToast({
+                    style: Toast.Style.Animated,
+                    title: "Session Description",
+                    message: session.description,
+                  });
+                }}
+                shortcut={{ modifiers: ["cmd"], key: "i" }}
+              />
+              <Action
+                title="Delete Session"
+                onAction={() => deleteSessionFile(session)}
+                icon={Icon.Trash}
+                style={Action.Style.Destructive}
+                shortcut={{ modifiers: ["ctrl"], key: "x" }}
+              />
+            </ActionPanel>
+          }
+        />
+      ))}
     </List>
   );
 }
@@ -438,21 +502,16 @@ function ResumeSessionAction({ session }: { session: Session }) {
         if (result.success) {
           await showTerminalSuccessToast(
             result.terminalUsed,
-            `Claude Code session in ${getDirectoryName(session.directory)}`,
+            `Claude Code session in ${getProjectName(session.directory)}`,
           );
         } else {
           await showTerminalErrorToast(
             getManualCommand(resumeCommand),
-            `Claude Code session in ${getDirectoryName(session.directory)}`,
+            `Claude Code session in ${getProjectName(session.directory)}`,
           );
         }
       }}
       icon={Icon.Play}
     />
   );
-}
-
-function getDirectoryName(path: string): string {
-  const parts = path.split("/");
-  return parts[parts.length - 1] || path;
 }
