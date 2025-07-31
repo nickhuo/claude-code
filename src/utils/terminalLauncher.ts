@@ -4,7 +4,6 @@ import { promisify } from "util";
 
 const execAsync = promisify(exec);
 
-// 防重复执行的全局状态
 let isExecuting = false;
 
 interface Preferences {

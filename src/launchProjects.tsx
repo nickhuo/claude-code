@@ -67,6 +67,7 @@ export default function LaunchClaudeProjects() {
 
       const parsedProjects = (await Promise.all(projectPromises))
         .filter((project): project is ProjectInfo => project !== null)
+        .filter((project) => project.exists) // Filter out missing projects
         .sort((a, b) => b.lastActivity.getTime() - a.lastActivity.getTime());
 
       setProjects(parsedProjects);
@@ -225,7 +226,7 @@ function ProjectItem({ project }: { project: ProjectInfo }) {
 
   const getSubtitle = (): string => {
     const status = project.exists ? "" : " (Missing)";
-    return `${project.path}${status} • ${formatLastActivity(project.lastActivity)}`;
+    return `${project.path}${status}`;
   };
 
   return (
@@ -233,7 +234,7 @@ function ProjectItem({ project }: { project: ProjectInfo }) {
       title={project.name}
       subtitle={getSubtitle()}
       icon={getIcon()}
-      accessories={[{ text: project.exists ? "Available" : "Missing" }]}
+      accessories={[{ text: formatLastActivity(project.lastActivity) }]}
       actions={
         <ActionPanel>
           <Action
