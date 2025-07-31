@@ -3,7 +3,12 @@ import { useState, useEffect } from "react";
 import { readdir, readFile, stat } from "fs/promises";
 import { join } from "path";
 import { homedir } from "os";
-import { execSync } from "child_process";
+import {
+  executeInTerminal,
+  showTerminalSuccessToast,
+  showTerminalErrorToast,
+  getManualCommand,
+} from "./utils/terminalLauncher";
 
 interface SessionEntry {
   sessionId: string;
@@ -31,17 +36,35 @@ interface SessionFileInfo {
   size: number;
 }
 
+// Global loading state to prevent duplicate calls
+let isGlobalLoading = false;
+
 export default function SessionSearch() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [searchText, setSearchText] = useState("");
+  const [searchText, setSearchText] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    loadSessions();
+    let isMounted = true;
+
+    const load = async () => {
+      if (isMounted && !isGlobalLoading) {
+        isGlobalLoading = true;
+        await loadSessions();
+        isGlobalLoading = false;
+      }
+    };
+
+    load();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const loadSessions = async () => {
+    console.log("🔄 Starting loadSessions...");
     const startTime = Date.now();
     const TIMEOUT_MS = 10000; // 10 second timeout
 
@@ -64,6 +87,10 @@ export default function SessionSearch() {
         .slice(0, 15);
 
       console.log(`Loading ${recentFiles.length} most recent session files...`);
+      console.log(
+        `Recent files:`,
+        recentFiles.map((f) => ({ path: f.filePath, size: f.size })),
+      );
 
       // Process files sequentially to avoid memory spikes
       const sessions: Session[] = [];
@@ -75,9 +102,13 @@ export default function SessionSearch() {
         }
 
         try {
+          console.log(`Parsing file: ${fileInfo.filePath.split("/").pop()}`);
           const session = await parseSessionFile(fileInfo.filePath);
           if (session) {
+            console.log(`✅ Successfully parsed session: ${session.id}`);
             sessions.push(session);
+          } else {
+            console.log(`❌ Failed to parse session from: ${fileInfo.filePath.split("/").pop()}`);
           }
         } catch (err) {
           console.error(`Error parsing session file ${fileInfo.filePath}:`, err);
@@ -122,8 +153,8 @@ export default function SessionSearch() {
                 const filePath = join(dirPath, file);
                 const stats = await stat(filePath);
 
-                // Skip files larger than 5MB to avoid memory issues
-                const maxFileSize = 5 * 1024 * 1024; // 5MB
+                // Skip files larger than 50MB to avoid memory issues
+                const maxFileSize = 50 * 1024 * 1024; // 50MB
                 if (stats.size > maxFileSize) {
                   console.log(`Skipping large file: ${filePath} (${(stats.size / 1024 / 1024).toFixed(1)}MB)`);
                   continue;
@@ -166,6 +197,7 @@ export default function SessionSearch() {
       let description = "Claude Code Session";
       let timestamp = new Date();
       let lastActivity = new Date(0);
+      let isErrorSession = false;
 
       // Parse JSONL entries
       for (const line of lines) {
@@ -190,6 +222,10 @@ export default function SessionSearch() {
           // Look for summary entries or meaningful descriptions
           if (entry.type === "summary" && entry.summary) {
             description = entry.summary;
+            // Check if this is an error session
+            if (entry.summary.includes("Invalid API key") || entry.summary.includes("Please run /login")) {
+              isErrorSession = true;
+            }
           } else if (entry.message?.content && description === "Claude Code Session") {
             // Use first user message as description if no summary
             const content = entry.message.content;
@@ -203,12 +239,44 @@ export default function SessionSearch() {
         }
       }
 
-      if (!sessionId) return null;
+      // If no sessionId found in content, try to extract from filename
+      if (!sessionId) {
+        const filename = filePath.split("/").pop() || "";
+        const match = filename.match(/([a-f0-9-]{36})\.jsonl$/);
+        if (match) {
+          sessionId = match[1];
+          console.log(`📁 Extracted sessionId from filename: ${sessionId}`);
+        }
+      }
+
+      // If still no sessionId, this file can't be parsed
+      if (!sessionId) {
+        console.log(`❌ No sessionId found in content or filename for: ${filePath.split("/").pop()}`);
+        return null;
+      }
+
+      // For error sessions, provide better description and default directory
+      if (isErrorSession) {
+        description = "❌ " + description;
+        if (!directory) {
+          directory = "~"; // Default directory for failed sessions
+        }
+      }
+
+      // Set timestamp from file stats if not available from content
+      if (!timestamp || timestamp.getTime() === 0) {
+        try {
+          const stats = await stat(filePath);
+          timestamp = stats.mtime;
+        } catch {
+          timestamp = new Date();
+        }
+      }
 
       return {
         id: sessionId,
         description,
-        directory,
+        directory: directory || "~",
         timestamp,
         lastActivity: lastActivity.getTime() > 0 ? lastActivity : timestamp,
         filePath,
@@ -292,73 +360,91 @@ export default function SessionSearch() {
   return (
     <List
       isLoading={isLoading}
-      searchText={searchText}
-      onSearchTextChange={setSearchText}
+      onSearchTextChange={(text: string) => setSearchText(text || "")}
       searchBarPlaceholder="Search Claude Code sessions..."
       navigationTitle="Claude Code Sessions"
     >
-      {filteredSessions.map((session) => (
-        <List.Item
-          key={session.id}
-          title={session.description}
-          subtitle={getDirectoryName(session.directory)}
-          accessories={[{ text: formatTimeAgo(session.lastActivity) }]}
-          icon={Icon.Message}
-          actions={
-            <ActionPanel>
-              <ResumeSessionAction session={session} />
-              <Action.CopyToClipboard
-                title="Copy Session ID"
-                content={session.id}
-                shortcut={{ modifiers: ["cmd"], key: "c" }}
-              />
-              <Action.CopyToClipboard
-                title="Copy Directory Path"
-                content={session.directory}
-                shortcut={{ modifiers: ["cmd", "shift"], key: "c" }}
-              />
-              <Action
-                title="Show Full Description"
-                onAction={async () => {
-                  await showToast({
-                    style: Toast.Style.Animated,
-                    title: "Session Description",
-                    message: session.description,
-                  });
-                }}
-                shortcut={{ modifiers: ["cmd"], key: "i" }}
-              />
-            </ActionPanel>
-          }
-        />
-      ))}
+      {filteredSessions.map((session) => {
+        const isErrorSession = session.description.includes("❌");
+        return (
+          <List.Item
+            key={session.id}
+            title={session.description}
+            subtitle={getDirectoryName(session.directory)}
+            accessories={[{ text: formatTimeAgo(session.lastActivity) }]}
+            icon={isErrorSession ? Icon.ExclamationMark : Icon.Message}
+            actions={
+              <ActionPanel>
+                {!isErrorSession && <ResumeSessionAction session={session} />}
+                {isErrorSession && (
+                  <Action
+                    title="Session Failed - Check Claude Code Setup"
+                    onAction={async () => {
+                      await showToast({
+                        style: Toast.Style.Failure,
+                        title: "Session Error",
+                        message: "This session failed due to authentication issues. Run 'claude login' to fix.",
+                      });
+                    }}
+                    icon={Icon.ExclamationMark}
+                  />
+                )}
+                <Action.CopyToClipboard
+                  title="Copy Claude Command"
+                  content={isErrorSession ? `claude login` : `cd "${session.directory}" && claude -r "${session.id}"`}
+                  shortcut={{ modifiers: ["cmd"], key: "return" }}
+                />
+                <Action.CopyToClipboard
+                  title="Copy Session ID"
+                  content={session.id}
+                  shortcut={{ modifiers: ["cmd"], key: "c" }}
+                />
+                {!isErrorSession && (
+                  <Action.CopyToClipboard
+                    title="Copy Directory Path"
+                    content={session.directory}
+                    shortcut={{ modifiers: ["cmd", "shift"], key: "c" }}
+                  />
+                )}
+                <Action
+                  title="Show Full Description"
+                  onAction={async () => {
+                    await showToast({
+                      style: Toast.Style.Animated,
+                      title: "Session Description",
+                      message: session.description,
+                    });
+                  }}
+                  shortcut={{ modifiers: ["cmd"], key: "i" }}
+                />
+              </ActionPanel>
+            }
+          />
+        );
+      })}
     </List>
   );
 }
 
 function ResumeSessionAction({ session }: { session: Session }) {
   const resumeCommand = `cd "${session.directory}" && claude -r "${session.id}"`;
-  const escapedCommand = resumeCommand.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
   return (
     <Action
       title="Resume Session"
       onAction={async () => {
-        try {
-          execSync(`osascript -e 'tell application "Terminal" to do script "${escapedCommand}"'`);
+        const result = await executeInTerminal(resumeCommand);
 
-          await showToast({
-            style: Toast.Style.Success,
-            title: "Session Resumed",
-            message: `Resumed Claude Code session in ${getDirectoryName(session.directory)}`,
-          });
-        } catch (error) {
-          console.error("Error resuming session:", error);
-          await showToast({
-            style: Toast.Style.Failure,
-            title: "Failed to Resume Session",
-            message: "Please ensure Claude Code CLI is installed",
-          });
+        if (result.success) {
+          await showTerminalSuccessToast(
+            result.terminalUsed,
+            `Claude Code session in ${getDirectoryName(session.directory)}`,
+          );
+        } else {
+          await showTerminalErrorToast(
+            getManualCommand(resumeCommand),
+            `Claude Code session in ${getDirectoryName(session.directory)}`,
+          );
         }
       }}
       icon={Icon.Play}

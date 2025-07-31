@@ -44,6 +44,26 @@
       "mode": "view"
     }
   ],
+  "preferences": [
+    {
+      "name": "terminalApp",
+      "title": "Terminal Application",
+      "description": "Choose which terminal application to use for launching Claude Code",
+      "type": "dropdown",
+      "required": true,
+      "default": "terminal",
+      "data": [
+        {
+          "title": "Terminal (Default)",
+          "value": "terminal"
+        },
+        {
+          "title": "iTerm2",
+          "value": "iterm2"
+        }
+      ]
+    }
+  ],
   "dependencies": {
     "@raycast/api": "^1.101.1",
     "@raycast/utils": "^1.17.0"

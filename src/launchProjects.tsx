@@ -2,9 +2,14 @@ import { List, ActionPanel, Action, showToast, Toast, Icon } from "@raycast/api"
 import { useState, useEffect } from "react";
 import { readdir, readFile, stat } from "fs/promises";
 import { existsSync } from "fs";
-import { exec } from "child_process";
 import { homedir } from "os";
 import path from "path";
+import {
+  executeInTerminal,
+  showTerminalSuccessToast,
+  showTerminalErrorToast,
+  getManualCommand,
+} from "./utils/terminalLauncher";
 
 interface ProjectInfo {
   name: string;
@@ -234,7 +239,7 @@ function ProjectItem({ project }: { project: ProjectInfo }) {
           <Action
             title="Open with Claude Code"
             icon={Icon.Terminal}
-            onAction={() => {
+            onAction={async () => {
               if (!project.exists) {
                 showToast({
                   style: Toast.Style.Failure,
@@ -243,28 +248,22 @@ function ProjectItem({ project }: { project: ProjectInfo }) {
                 });
                 return;
               }
-              // Trigger the exec
-              const escapedCommand = `cd "${project.path}" && claude --add-dir "${project.path}"`;
-              const osascriptCommand = `tell application "Terminal" to do script "${escapedCommand.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 
-              // Execute the command
-              exec(`osascript -e '${osascriptCommand}'`, (error) => {
-                if (error) {
-                  showToast({
-                    style: Toast.Style.Failure,
-                    title: "Launch Failed",
-                    message: `Error: ${error.message}`,
-                  });
-                } else {
-                  showToast({
-                    style: Toast.Style.Success,
-                    title: "Success!",
-                    message: `Claude Code launched with ${project.name}`,
-                  });
-                }
-              });
+              const command = `cd "${project.path}" && claude --add-dir "${project.path}"`;
+              const result = await executeInTerminal(command);
+
+              if (result.success) {
+                await showTerminalSuccessToast(result.terminalUsed, `Claude Code with ${project.name}`);
+              } else {
+                await showTerminalErrorToast(getManualCommand(command), `Claude Code with ${project.name}`);
+              }
             }}
             disabled={!project.exists}
+          />
+          <Action.CopyToClipboard
+            title="Copy Claude Command"
+            content={`cd "${project.path}" && claude --add-dir "${project.path}"`}
+            shortcut={{ modifiers: ["cmd"], key: "return" }}
           />
           <Action.CopyToClipboard
             title="Copy Path"

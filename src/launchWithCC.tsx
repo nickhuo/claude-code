@@ -1,6 +1,11 @@
 import { getSelectedFinderItems, showToast, Toast, List, ActionPanel, Action } from "@raycast/api";
-import { useExec } from "@raycast/utils";
 import { useState, useEffect } from "react";
+import {
+  executeInTerminal,
+  showTerminalSuccessToast,
+  showTerminalErrorToast,
+  getManualCommand,
+} from "./utils/terminalLauncher";
 
 interface FileSystemItem {
   path: string;
@@ -76,6 +81,11 @@ export default function OpenWithClaudeCode() {
               <ActionPanel>
                 <Action.Push title="Open with Claude Code" target={<ClaudeCodeLauncher item={item} />} />
                 <Action.CopyToClipboard
+                  title="Copy Claude Command"
+                  content={`cd "${item.path.includes(".") ? item.path.split("/").slice(0, -1).join("/") : item.path}" && claude --add-dir "${item.path}"`}
+                  shortcut={{ modifiers: ["cmd"], key: "return" }}
+                />
+                <Action.CopyToClipboard
                   title="Copy Path"
                   content={item.path}
                   shortcut={{ modifiers: ["cmd"], key: "c" }}
@@ -90,47 +100,42 @@ export default function OpenWithClaudeCode() {
 }
 
 function ClaudeCodeLauncher({ item }: { item: FileSystemItem }) {
+  const [isLoading, setIsLoading] = useState(false);
+  const [isLaunched, setIsLaunched] = useState(false);
+  const [launchError, setLaunchError] = useState<string | null>(null);
   const fileName = item.path.split("/").pop() || item.path;
 
   // Determine the directory to navigate to
   const targetDir = item.path.includes(".") ? item.path.split("/").slice(0, -1).join("/") : item.path;
 
-  // Simple Terminal command that relies on user's environment
-  const simpleCommand = `cd "${targetDir}" && claude --add-dir "${item.path}"`;
+  // Claude Code command
+  const command = `cd "${targetDir}" && claude --add-dir "${item.path}"`;
 
-  // Debug information
-  console.log("Target directory:", targetDir);
-  console.log("Item path:", item.path);
-  console.log("Simple command:", simpleCommand);
+  useEffect(() => {
+    const launchClaudeCode = async () => {
+      setIsLoading(true);
 
-  // Properly escape the command for AppleScript
-  const escapedCommand = simpleCommand.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-  console.log("Escaped command:", escapedCommand);
-  console.log("Full osascript command:", `tell application "Terminal" to do script "${escapedCommand}"`);
+      try {
+        const result = await executeInTerminal(command);
 
-  const { isLoading, error: launchError } = useExec(
-    "osascript",
-    ["-e", `tell application "Terminal" to do script "${escapedCommand}"`],
-    {
-      execute: true, // Always execute
-      onData: (result) => {
-        console.log("osascript result:", result);
-        showToast({
-          style: Toast.Style.Success,
-          title: "Success!",
-          message: `Claude Code launched with ${fileName}`,
-        });
-      },
-      onError: (error) => {
-        console.log("osascript error:", error);
-        showToast({
-          style: Toast.Style.Failure,
-          title: "osascript Failed",
-          message: `Error: ${error.message}`,
-        });
-      },
-    },
-  );
+        if (result.success) {
+          await showTerminalSuccessToast(result.terminalUsed, fileName);
+          setIsLaunched(true);
+        } else {
+          setLaunchError("Failed to launch terminal");
+          await showTerminalErrorToast(getManualCommand(command), fileName);
+        }
+      } catch (error) {
+        console.error("Error launching Claude Code:", error);
+        setLaunchError(error instanceof Error ? error.message : "Unknown error");
+        await showTerminalErrorToast(getManualCommand(command), fileName);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    launchClaudeCode();
+  }, [command, fileName]);
 
   if (launchError) {
     return (
@@ -167,24 +172,62 @@ function ClaudeCodeLauncher({ item }: { item: FileSystemItem }) {
   return (
     <List isLoading={isLoading}>
       <List.Item
-        title={isLoading ? `Launching Claude Code...` : `Successfully opened ${fileName}`}
+        title={
+          isLoading
+            ? `Launching Claude Code...`
+            : isLaunched
+              ? `Successfully opened ${fileName}`
+              : `Ready to launch ${fileName}`
+        }
         subtitle={item.path}
-        icon={isLoading ? "⚡" : "✅"}
+        icon={isLoading ? "⚡" : isLaunched ? "✅" : "📁"}
         actions={
           <ActionPanel>
-            <Action.CopyToClipboard title="Copy Path" content={item.path} />
+            <Action.CopyToClipboard
+              title="Copy Claude Command"
+              content={command}
+              shortcut={{ modifiers: ["cmd"], key: "return" }}
+            />
+            <Action.CopyToClipboard title="Copy Path" content={item.path} shortcut={{ modifiers: ["cmd"], key: "c" }} />
             {!isLoading && (
               <Action
                 title="Launch Again"
                 onAction={async () => {
-                  await showToast({
-                    style: Toast.Style.Animated,
-                    title: "Launching again...",
-                    message: `Opening ${fileName} with Claude Code`,
-                  });
+                  setIsLoading(true);
+                  setLaunchError(null);
+                  setIsLaunched(false);
+
+                  try {
+                    const result = await executeInTerminal(command);
+
+                    if (result.success) {
+                      await showTerminalSuccessToast(result.terminalUsed, fileName);
+                      setIsLaunched(true);
+                    } else {
+                      setLaunchError("Failed to launch terminal");
+                      await showTerminalErrorToast(getManualCommand(command), fileName);
+                    }
+                  } catch (error) {
+                    console.error("Error launching Claude Code:", error);
+                    setLaunchError(error instanceof Error ? error.message : "Unknown error");
+                    await showTerminalErrorToast(getManualCommand(command), fileName);
+                  } finally {
+                    setIsLoading(false);
+                  }
                 }}
               />
             )}
+            <Action
+              title="Copy Manual Command"
+              onAction={async () => {
+                await showToast({
+                  style: Toast.Style.Animated,
+                  title: "Manual Command",
+                  message: `Run: claude --add-dir "${item.path}"`,
+                });
+              }}
+              shortcut={{ modifiers: ["cmd"], key: "m" }}
+            />
           </ActionPanel>
         }
       />
