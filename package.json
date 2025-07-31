@@ -27,7 +27,7 @@
     },
     {
       "name": "launchProjects",
-      "title": "Launch Claude Code Projects",
+      "title": "Open Claude Code Projects",
       "subtitle": "Claude Code",
       "description": "Browse and launch Claude Code with your recent projects",
       "mode": "view"

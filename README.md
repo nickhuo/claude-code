@@ -7,62 +7,15 @@ A sophisticated Raycast extension that provides comprehensive integration with t
 ### Core Commands
 
 - **🔍 Session Search** - Advanced Claude Code session browser with intelligent filtering and search
-- **🚀 Launch with Claude Code** - Enhanced Finder integration with multi-file/directory selection
+- **🚀 Launch with Claude Code** - Enhanced Finder integration with multi-file/directory selection (System Terminal, iTerm2 supported, more will be supported)
 - **📁 Launch Projects** - Project management system with availability status tracking
 - **⚙️ User Command Manager** - Custom command creation and management system
 - **🤖 User Agents Manager** - Claude Code subagent creation and management
 
-### Advanced Capabilities
-
-- **Session Management**: JSONL parsing, memory-efficient processing, resume functionality
-- **File System Integration**: AppleScript automation, path resolution, Terminal control
-- **Extensibility Framework**: Plugin-like command and agent creation with metadata-driven configuration
-- **Error Handling**: Graceful degradation, timeout protection, validation systems
-
-## Development
 
 ### Prerequisites
 
-- [Raycast](https://raycast.com) installed
-- Raycast CLI tools
 - [Claude Code CLI](https://claude.ai/code) installed and configured
-
-### Setup
-
-1. Install Raycast CLI tools:
-   ```bash
-   npm install -g @raycast/api@latest
-   ```
-
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-3. Start development:
-   ```bash
-   npm run dev
-   ```
-
-### Available Scripts
-
-- `npm run dev` - Start development mode with live reload
-- `npm run build` - Build the extension for production
-- `npm run lint` - Run ESLint to check code quality
-- `npm run fix-lint` - Automatically fix ESLint issues
-- `npm run publish` - Publish extension to Raycast Store
-
-### Project Structure
-
-```
-src/
-├── sessionSearch.tsx          # Advanced session browser with search
-├── launchWithCC.tsx          # Enhanced Finder integration
-├── launchProjects.tsx        # Project management system
-├── userCommandManager.tsx    # Custom command creation system
-├── userAgentsManager.tsx     # Subagent management system
-└── terminalLauncher.ts       # Unified terminal launcher utility
-```
 
 ## Commands
 
@@ -89,6 +42,3 @@ The extension integrates with Claude Code CLI through multiple command patterns:
 - Context launching: `claude --add-dir "{path}"`
 - Project launching with proper path resolution and escaping
 
-## Installation
-
-This extension can be installed from the [Raycast Store](https://raycast.com/store) or built from source using the development setup above.
