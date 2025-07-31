@@ -10,6 +10,7 @@ import {
   showTerminalErrorToast,
   getManualCommand,
 } from "./utils/terminalLauncher";
+import ProjectSessions from "./projectSessions";
 
 interface ProjectInfo {
   name: string;
@@ -195,8 +196,8 @@ export default function LaunchClaudeProjects() {
         />
       )}
 
-      {projects.map((project, index) => (
-        <ProjectItem key={project.encodedDirName + index} project={project} />
+      {projects.map((project) => (
+        <ProjectItem key={`${project.path}-${project.name}-${project.encodedDirName}`} project={project} />
       ))}
     </List>
   );
@@ -259,7 +260,19 @@ function ProjectItem({ project }: { project: ProjectInfo }) {
                 await showTerminalErrorToast(getManualCommand(command), `Claude Code with ${project.name}`);
               }
             }}
-            disabled={!project.exists}
+            shortcut={{ modifiers: [], key: "return" }}
+          />
+          <Action.Push
+            title="View Project Sessions"
+            target={
+              <ProjectSessions
+                projectDirectory={project.path}
+                projectName={project.name}
+                encodedDirName={project.encodedDirName}
+              />
+            }
+            icon={Icon.List}
+            shortcut={{ modifiers: ["cmd"], key: "o" }}
           />
           <Action.CopyToClipboard
             title="Copy Claude Command"

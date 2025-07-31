@@ -9,7 +9,6 @@ import {
   showTerminalErrorToast,
   getManualCommand,
 } from "./utils/terminalLauncher";
-import ProjectSessions from "./projectSessions";
 
 interface SessionEntry {
   sessionId: string;
@@ -38,25 +37,15 @@ interface SessionFileInfo {
   size: number;
 }
 
-// Global loading state to prevent duplicate calls
-let isGlobalLoading = false;
+interface ProjectSessionsProps {
+  projectDirectory: string;
+  projectName: string;
+  encodedDirName: string;
+}
 
 // Utility function to extract project name from directory path
 const getProjectName = (directoryPath: string): string => {
-  // Use the same logic as launchProjects.tsx to extract project name
   return basename(directoryPath) || directoryPath;
-};
-
-// Utility function to extract encoded directory name from session file path
-const getEncodedDirName = (sessionFilePath: string): string => {
-  // Extract the encoded directory name from the file path
-  // Path format: ~/.claude/projects/{encodedDirName}/{sessionId}.jsonl
-  const pathParts = sessionFilePath.split("/");
-  const projectsIndex = pathParts.findIndex((part) => part === "projects");
-  if (projectsIndex !== -1 && projectsIndex + 1 < pathParts.length) {
-    return pathParts[projectsIndex + 1];
-  }
-  return "";
 };
 
 // Utility function to determine the best description from two session descriptions
@@ -90,32 +79,18 @@ const getBestDescription = (desc1: string, desc2: string): string => {
   return desc1;
 };
 
-export default function SessionSearch() {
+export default function ProjectSessions({ projectDirectory, projectName, encodedDirName }: ProjectSessionsProps) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchText, setSearchText] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let isMounted = true;
+    loadProjectSessions();
+  }, [projectDirectory, encodedDirName]);
 
-    const load = async () => {
-      if (isMounted && !isGlobalLoading) {
-        isGlobalLoading = true;
-        await loadSessions();
-        isGlobalLoading = false;
-      }
-    };
-
-    load();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  const loadSessions = async () => {
-    console.log("🔄 Starting loadSessions...");
+  const loadProjectSessions = async () => {
+    console.log(`🔄 Loading sessions for project: ${projectName}...`);
     const startTime = Date.now();
     const TIMEOUT_MS = 10000; // 10 second timeout
 
@@ -124,27 +99,22 @@ export default function SessionSearch() {
       setError(null);
 
       const claudeProjectsPath = join(homedir(), ".claude", "projects");
+      const projectSessionsPath = join(claudeProjectsPath, encodedDirName);
 
-      // Get all session files with metadata
-      const allSessionFiles = await getAllSessionFiles(claudeProjectsPath);
+      // Get all session files with metadata for this specific project
+      const sessionFiles = await getProjectSessionFiles(projectSessionsPath);
 
       if (Date.now() - startTime > TIMEOUT_MS) {
         throw new Error("Session loading timeout");
       }
 
-      // Sort by modification time and take more files for parsing to ensure we have enough valid sessions
-      const recentFiles = allSessionFiles
-        .sort((a, b) => b.modifiedTime.getTime() - a.modifiedTime.getTime())
-        .slice(0, 100);
+      // Sort by modification time and take more files for parsing
+      const recentFiles = sessionFiles.sort((a, b) => b.modifiedTime.getTime() - a.modifiedTime.getTime()).slice(0, 50); // Limit to 50 most recent files for this project
 
-      console.log(`Loading ${recentFiles.length} most recent session files...`);
-      console.log(
-        `Recent files:`,
-        recentFiles.map((f) => ({ path: f.filePath, size: f.size })),
-      );
+      console.log(`Loading ${recentFiles.length} session files for project ${projectName}...`);
 
       // Process files sequentially to avoid memory spikes
-      const allSessions: Session[] = [];
+      const projectSessions: Session[] = [];
       for (const fileInfo of recentFiles) {
         // Check timeout before processing each file
         if (Date.now() - startTime > TIMEOUT_MS) {
@@ -155,11 +125,9 @@ export default function SessionSearch() {
         try {
           console.log(`Parsing file: ${fileInfo.filePath.split("/").pop()}`);
           const session = await parseSessionFile(fileInfo.filePath);
-          if (session) {
+          if (session && session.directory === projectDirectory) {
             console.log(`✅ Successfully parsed session: ${session.id}`);
-            allSessions.push(session);
-          } else {
-            console.log(`❌ Failed to parse session from: ${fileInfo.filePath.split("/").pop()}`);
+            projectSessions.push(session);
           }
         } catch (err) {
           console.error(`Error parsing session file ${fileInfo.filePath}:`, err);
@@ -176,11 +144,11 @@ export default function SessionSearch() {
       const sessionMap = new Map<string, Session>();
       let duplicateCount = 0;
 
-      for (const session of allSessions) {
+      for (const session of projectSessions) {
         const existing = sessionMap.get(session.id);
         if (existing) {
           duplicateCount++;
-          console.log(`🔄 Merging duplicate session: ${session.id}`);
+          console.log(`🔄 Merging duplicate project session: ${session.id} in ${projectName}`);
           console.log(`  Existing: ${existing.description} (${existing.lastActivity.toISOString()})`);
           console.log(`  New: ${session.description} (${session.lastActivity.toISOString()})`);
 
@@ -209,74 +177,64 @@ export default function SessionSearch() {
       }
 
       if (duplicateCount > 0) {
-        console.log(`📊 Merged ${duplicateCount} duplicate sessions`);
+        console.log(`📊 Merged ${duplicateCount} duplicate project sessions for ${projectName}`);
       }
 
       // Convert map back to array and filter/sort
       const mergedSessions = Array.from(sessionMap.values());
       const validSessions = mergedSessions
         .filter((session) => !session.isErrorSession)
-        .sort((a, b) => b.lastActivity.getTime() - a.lastActivity.getTime())
-        .slice(0, 30);
+        .sort((a, b) => b.lastActivity.getTime() - a.lastActivity.getTime());
 
       setSessions(validSessions);
-      console.log(`Loaded ${validSessions.length} valid sessions in ${Date.now() - startTime}ms`);
+      console.log(`Loaded ${validSessions.length} sessions for project ${projectName} in ${Date.now() - startTime}ms`);
     } catch (err) {
-      console.error("Error loading sessions:", err);
+      console.error("Error loading project sessions:", err);
       if (err instanceof Error && err.message.includes("timeout")) {
         setError("Session loading timed out. Try again or reduce the number of Claude Code projects.");
       } else {
-        setError("Failed to load Claude Code sessions. Make sure Claude Code CLI is installed and has been used.");
+        setError(
+          `Failed to load sessions for project ${projectName}. Make sure Claude Code CLI is installed and has been used.`,
+        );
       }
     } finally {
       setIsLoading(false);
     }
   };
 
-  const getAllSessionFiles = async (claudeProjectsPath: string): Promise<SessionFileInfo[]> => {
-    const allFiles: SessionFileInfo[] = [];
+  const getProjectSessionFiles = async (projectSessionsPath: string): Promise<SessionFileInfo[]> => {
+    const sessionFiles: SessionFileInfo[] = [];
 
     try {
-      const projectDirs = await readdir(claudeProjectsPath, { withFileTypes: true });
+      const files = await readdir(projectSessionsPath);
+      const jsonlFiles = files.filter((file) => file.endsWith(".jsonl"));
 
-      for (const dir of projectDirs) {
-        if (dir.isDirectory()) {
-          try {
-            const dirPath = join(claudeProjectsPath, dir.name);
-            const files = await readdir(dirPath);
-            const jsonlFiles = files.filter((file) => file.endsWith(".jsonl"));
+      for (const file of jsonlFiles) {
+        try {
+          const filePath = join(projectSessionsPath, file);
+          const stats = await stat(filePath);
 
-            for (const file of jsonlFiles) {
-              try {
-                const filePath = join(dirPath, file);
-                const stats = await stat(filePath);
-
-                // Skip files larger than 50MB to avoid memory issues
-                const maxFileSize = 10 * 1024 * 1024; // 50MB
-                if (stats.size > maxFileSize) {
-                  console.log(`Skipping large file: ${filePath} (${(stats.size / 1024 / 1024).toFixed(1)}MB)`);
-                  continue;
-                }
-
-                allFiles.push({
-                  filePath,
-                  modifiedTime: stats.mtime,
-                  size: stats.size,
-                });
-              } catch (err) {
-                console.error(`Error getting stats for file ${file}:`, err);
-              }
-            }
-          } catch (err) {
-            console.error(`Error reading directory ${dir.name}:`, err);
+          // Skip files larger than 10MB to avoid memory issues
+          const maxFileSize = 10 * 1024 * 1024; // 10MB
+          if (stats.size > maxFileSize) {
+            console.log(`Skipping large file: ${filePath} (${(stats.size / 1024 / 1024).toFixed(1)}MB)`);
+            continue;
           }
+
+          sessionFiles.push({
+            filePath,
+            modifiedTime: stats.mtime,
+            size: stats.size,
+          });
+        } catch (err) {
+          console.error(`Error getting stats for file ${file}:`, err);
         }
       }
     } catch (err) {
-      console.error("Error reading Claude projects directory:", err);
+      console.error("Error reading project sessions directory:", err);
     }
 
-    return allFiles;
+    return sessionFiles;
   };
 
   const parseSessionFile = async (filePath: string): Promise<Session | null> => {
@@ -446,7 +404,7 @@ export default function SessionSearch() {
       });
 
       // Refresh sessions list
-      await loadSessions();
+      await loadProjectSessions();
 
       return true;
     } catch (error) {
@@ -463,30 +421,25 @@ export default function SessionSearch() {
   };
 
   const filteredSessions = sessions.filter((session) => {
-    // Apply search filter only (error sessions already filtered out in loadSessions)
     if (!searchText) return true;
     const query = searchText.toLowerCase();
-    return (
-      session.description.toLowerCase().includes(query) ||
-      session.directory.toLowerCase().includes(query) ||
-      getProjectName(session.directory).toLowerCase().includes(query)
-    );
+    return session.description.toLowerCase().includes(query) || session.id.toLowerCase().includes(query);
   });
 
   if (isLoading) {
-    return <List isLoading searchBarPlaceholder="Loading Claude Code sessions..." />;
+    return <List isLoading searchBarPlaceholder={`Loading sessions for ${projectName}...`} />;
   }
 
   if (error) {
     return (
       <List>
         <List.Item
-          title="Error Loading Sessions"
+          title="Error Loading Project Sessions"
           subtitle={error}
           icon={Icon.XMarkCircle}
           actions={
             <ActionPanel>
-              <Action title="Retry" onAction={loadSessions} icon={Icon.RotateClockwise} />
+              <Action title="Retry" onAction={loadProjectSessions} icon={Icon.RotateClockwise} />
               <Action.OpenInBrowser title="Install Claude Code" url="https://docs.anthropic.com/en/docs/claude-code" />
             </ActionPanel>
           }
@@ -499,8 +452,8 @@ export default function SessionSearch() {
     return (
       <List>
         <List.Item
-          title="No Claude Code Sessions Found"
-          subtitle="Start using Claude Code CLI to see your sessions here"
+          title={`No Sessions Found for ${projectName}`}
+          subtitle={`No Claude Code sessions found for this project. Start a new session in ${projectDirectory} to see sessions here.`}
           icon={Icon.Message}
           actions={
             <ActionPanel>
@@ -519,8 +472,8 @@ export default function SessionSearch() {
     <List
       isLoading={isLoading}
       onSearchTextChange={(text: string) => setSearchText(text || "")}
-      searchBarPlaceholder="Search Claude Code sessions..."
-      navigationTitle="Claude Code Sessions"
+      searchBarPlaceholder={`Search sessions for ${projectName}...`}
+      navigationTitle={`${projectName} Sessions`}
     >
       {filteredSessions.map((session) => (
         <List.Item
@@ -532,18 +485,6 @@ export default function SessionSearch() {
           actions={
             <ActionPanel>
               <ResumeSessionAction session={session} />
-              <Action.Push
-                title="View Project Sessions"
-                target={
-                  <ProjectSessions
-                    projectDirectory={session.directory}
-                    projectName={getProjectName(session.directory)}
-                    encodedDirName={getEncodedDirName(session.filePath)}
-                  />
-                }
-                icon={Icon.List}
-                shortcut={{ modifiers: ["cmd"], key: "o" }}
-              />
               <Action.CopyToClipboard
                 title="Copy Claude Command"
                 content={`cd "${session.directory}" && claude -r "${session.id}"`}
