@@ -10,7 +10,8 @@ import {
   useNavigation,
   Icon,
 } from "@raycast/api";
-import { useState, useEffect } from "react";
+import { showFailureToast } from "@raycast/utils";
+import { useState, useEffect, useMemo } from "react";
 import { readFileSync, writeFileSync, readdirSync, statSync, unlinkSync, mkdirSync } from "fs";
 import { join, dirname, extname, basename } from "path";
 import { homedir } from "os";
@@ -238,7 +239,7 @@ export default function UserCommandManager() {
   const [commands, setCommands] = useState<Command[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchText, setSearchText] = useState("");
-  const scanner = new CommandScanner();
+  const scanner = useMemo(() => new CommandScanner(), []);
 
   useEffect(() => {
     loadCommands();
@@ -250,11 +251,7 @@ export default function UserCommandManager() {
       const scannedCommands = scanner.scanCommands();
       setCommands(scannedCommands);
     } catch {
-      await showToast({
-        style: Toast.Style.Failure,
-        title: "Error",
-        message: "Failed to load commands",
-      });
+      showFailureToast(new Error("Failed to load commands"), { title: "Failed to load commands" });
     } finally {
       setIsLoading(false);
     }
@@ -287,11 +284,7 @@ export default function UserCommandManager() {
           message: `Deleted command "${command.title}"`,
         });
       } catch {
-        await showToast({
-          style: Toast.Style.Failure,
-          title: "Error",
-          message: "Failed to delete command",
-        });
+        showFailureToast(new Error("Failed to delete command"), { title: "Failed to delete command" });
       }
     }
   };
@@ -438,10 +431,8 @@ function CommandForm({ command, scanner, onSave }: { command?: Command; scanner:
             }
           }
         } catch {
-          await showToast({
-            style: Toast.Style.Failure,
-            title: "Error",
-            message: "Invalid custom parameters format",
+          showFailureToast(new Error("Invalid custom parameters format"), {
+            title: "Invalid custom parameters format",
           });
           return;
         }
@@ -476,10 +467,8 @@ function CommandForm({ command, scanner, onSave }: { command?: Command; scanner:
       onSave();
       pop();
     } catch {
-      await showToast({
-        style: Toast.Style.Failure,
-        title: "Error",
-        message: `Failed to ${isEditing ? "update" : "create"} command`,
+      showFailureToast(new Error(`Failed to ${isEditing ? "update" : "create"} command`), {
+        title: `Failed to ${isEditing ? "update" : "create"} command`,
       });
     }
   };

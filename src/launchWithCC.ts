@@ -1,4 +1,5 @@
 import { getSelectedFinderItems, showToast, Toast, Clipboard } from "@raycast/api";
+import { showFailureToast } from "@raycast/utils";
 import { lstat } from "fs/promises";
 import {
   executeInTerminal,
@@ -137,10 +138,8 @@ export default async function main() {
 
       await showTerminalErrorToast(manualCommand, fileName);
 
-      await showToast({
-        style: Toast.Style.Failure,
+      showFailureToast(new Error("Check if Claude Code is installed. Command copied to clipboard."), {
         title: "Launch Failed",
-        message: "Check if Claude Code is installed. Command copied to clipboard.",
       });
     }
   } catch (error) {
@@ -148,11 +147,7 @@ export default async function main() {
 
     const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
 
-    await showToast({
-      style: Toast.Style.Failure,
-      title: "Failed to Launch Claude Code",
-      message: errorMessage,
-    });
+    showFailureToast(new Error(errorMessage), { title: "Failed to Launch Claude Code" });
 
     if (errorMessage.includes("Finder") || errorMessage.includes("select")) {
       setTimeout(async () => {

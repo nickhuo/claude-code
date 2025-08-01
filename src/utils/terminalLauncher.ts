@@ -1,4 +1,5 @@
 import { getPreferenceValues, showToast, Toast } from "@raycast/api";
+import { showFailureToast } from "@raycast/utils";
 import { exec } from "child_process";
 import { promisify } from "util";
 
@@ -195,9 +196,7 @@ export async function showTerminalSuccessToast(terminalUsed: string, context: st
  * Show error toast with manual command option
  */
 export async function showTerminalErrorToast(command: string, context: string) {
-  await showToast({
-    style: Toast.Style.Failure,
+  showFailureToast(new Error(`Could not launch ${context}. Manual command copied to clipboard.`), {
     title: "Launch Failed",
-    message: `Could not launch ${context}. Manual command copied to clipboard.`,
   });
 }

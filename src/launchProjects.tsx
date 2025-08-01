@@ -1,4 +1,5 @@
 import { List, ActionPanel, Action, showToast, Toast, Icon } from "@raycast/api";
+import { showFailureToast } from "@raycast/utils";
 import { useState, useEffect } from "react";
 import { readdir, readFile, stat } from "fs/promises";
 import { existsSync } from "fs";
@@ -244,10 +245,8 @@ function ProjectItem({ project }: { project: ProjectInfo }) {
             onAction={async () => {
               try {
                 if (!project.exists) {
-                  showToast({
-                    style: Toast.Style.Failure,
+                  showFailureToast(new Error(`The project path ${project.path} no longer exists`), {
                     title: "Project Not Found",
-                    message: `The project path ${project.path} no longer exists`,
                   });
                   return;
                 }
@@ -262,10 +261,8 @@ function ProjectItem({ project }: { project: ProjectInfo }) {
                 }
               } catch (error) {
                 console.error("Error opening project:", error);
-                await showToast({
-                  style: Toast.Style.Failure,
+                showFailureToast(error instanceof Error ? error : new Error("Failed to open project"), {
                   title: "Launch Failed",
-                  message: error instanceof Error ? error.message : "Failed to open project",
                 });
               }
             }}

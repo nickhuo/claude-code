@@ -1,4 +1,5 @@
 import { List, ActionPanel, Action, showToast, Toast, Icon, confirmAlert, Alert } from "@raycast/api";
+import { showFailureToast } from "@raycast/utils";
 import { useState, useEffect } from "react";
 import { readdir, readFile, stat, unlink } from "fs/promises";
 import { join, basename } from "path";
@@ -410,10 +411,8 @@ export default function ProjectSessions({ projectDirectory, projectName, encoded
     } catch (error) {
       console.error("Error deleting session file:", error);
 
-      await showToast({
-        style: Toast.Style.Failure,
+      showFailureToast(error instanceof Error ? error : new Error("Failed to delete session file"), {
         title: "Delete Failed",
-        message: error instanceof Error ? error.message : "Failed to delete session file",
       });
 
       return false;
@@ -553,10 +552,8 @@ function ResumeSessionAction({ session }: { session: Session }) {
           }
         } catch (error) {
           console.error("Error resuming session:", error);
-          await showToast({
-            style: Toast.Style.Failure,
+          showFailureToast(error instanceof Error ? error : new Error("Failed to resume session"), {
             title: "Resume Failed",
-            message: error instanceof Error ? error.message : "Failed to resume session",
           });
         }
       }}

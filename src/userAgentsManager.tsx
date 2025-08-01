@@ -10,6 +10,7 @@ import {
   useNavigation,
   Icon,
 } from "@raycast/api";
+import { showFailureToast } from "@raycast/utils";
 import { useState, useEffect } from "react";
 import { readFileSync, writeFileSync, readdirSync, statSync, unlinkSync, mkdirSync } from "fs";
 import { join, dirname, extname, basename } from "path";
@@ -285,11 +286,7 @@ export default function UserAgentsManager() {
       const scannedAgents = scanner.scanAgents();
       setAgents(scannedAgents);
     } catch {
-      await showToast({
-        style: Toast.Style.Failure,
-        title: "Error",
-        message: "Failed to load agents",
-      });
+      showFailureToast(new Error("Failed to load agents"), { title: "Failed to load agents" });
     } finally {
       setIsLoading(false);
     }
@@ -322,11 +319,7 @@ export default function UserAgentsManager() {
           message: `Deleted agent "${agent.name}"`,
         });
       } catch {
-        await showToast({
-          style: Toast.Style.Failure,
-          title: "Error",
-          message: "Failed to delete agent",
-        });
+        showFailureToast(new Error("Failed to delete agent"), { title: "Failed to delete agent" });
       }
     }
   };
@@ -474,10 +467,8 @@ function AgentForm({ agent, scanner, onSave }: { agent?: Agent; scanner: AgentSc
             }
           }
         } catch {
-          await showToast({
-            style: Toast.Style.Failure,
-            title: "Error",
-            message: "Invalid custom parameters format",
+          showFailureToast(new Error("Invalid custom parameters format"), {
+            title: "Invalid custom parameters format",
           });
           return;
         }
@@ -522,10 +513,8 @@ function AgentForm({ agent, scanner, onSave }: { agent?: Agent; scanner: AgentSc
       onSave();
       pop();
     } catch {
-      await showToast({
-        style: Toast.Style.Failure,
-        title: "Error",
-        message: `Failed to ${isEditing ? "update" : "create"} agent`,
+      showFailureToast(new Error(`Failed to ${isEditing ? "update" : "create"} agent`), {
+        title: `Failed to ${isEditing ? "update" : "create"} agent`,
       });
     }
   };
