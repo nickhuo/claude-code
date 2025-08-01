@@ -1,6 +1,6 @@
 # Claude Code
 
-A sophisticated Raycast extension that provides comprehensive integration with the Claude Code CLI. The extension offers five advanced commands for session management, project launching, and extensibility through custom commands and subagents.
+Claude Code for Raycast is a powerful extension that seamlessly connects Raycast with the Claude Code CLI. Unlock advanced productivity with five feature-rich commands for managing sessions, launching projects, and extending your workflow through custom commands and intelligent subagents.
 
 ## Features
 
