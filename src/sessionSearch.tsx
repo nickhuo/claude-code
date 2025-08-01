@@ -251,8 +251,8 @@ export default function SessionSearch() {
                 const filePath = join(dirPath, file);
                 const stats = await stat(filePath);
 
-                // Skip files larger than 50MB to avoid memory issues
-                const maxFileSize = 10 * 1024 * 1024; // 50MB
+                // Skip files larger than 10MB to avoid memory issues
+                const maxFileSize = 10 * 1024 * 1024; // 10MB
                 if (stats.size > maxFileSize) {
                   console.log(`Skipping large file: ${filePath} (${(stats.size / 1024 / 1024).toFixed(1)}MB)`);
                   continue;
@@ -562,11 +562,15 @@ export default function SessionSearch() {
               <Action
                 title="Show Full Description"
                 onAction={async () => {
-                  await showToast({
-                    style: Toast.Style.Animated,
-                    title: "Session Description",
-                    message: session.description,
-                  });
+                  try {
+                    await showToast({
+                      style: Toast.Style.Animated,
+                      title: "Session Description",
+                      message: session.description,
+                    });
+                  } catch (error) {
+                    console.error("Error showing description toast:", error);
+                  }
                 }}
                 shortcut={{ modifiers: ["cmd"], key: "i" }}
               />
@@ -592,18 +596,27 @@ function ResumeSessionAction({ session }: { session: Session }) {
     <Action
       title="Resume Session"
       onAction={async () => {
-        const result = await executeInTerminal(resumeCommand);
+        try {
+          const result = await executeInTerminal(resumeCommand);
 
-        if (result.success) {
-          await showTerminalSuccessToast(
-            result.terminalUsed,
-            `Claude Code session in ${getProjectName(session.directory)}`,
-          );
-        } else {
-          await showTerminalErrorToast(
-            getManualCommand(resumeCommand),
-            `Claude Code session in ${getProjectName(session.directory)}`,
-          );
+          if (result.success) {
+            await showTerminalSuccessToast(
+              result.terminalUsed,
+              `Claude Code session in ${getProjectName(session.directory)}`,
+            );
+          } else {
+            await showTerminalErrorToast(
+              getManualCommand(resumeCommand),
+              `Claude Code session in ${getProjectName(session.directory)}`,
+            );
+          }
+        } catch (error) {
+          console.error("Error resuming session:", error);
+          await showToast({
+            style: Toast.Style.Failure,
+            title: "Resume Failed",
+            message: error instanceof Error ? error.message : "Failed to resume session",
+          });
         }
       }}
       icon={Icon.Play}

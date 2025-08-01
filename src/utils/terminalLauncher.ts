@@ -108,7 +108,7 @@ async function validateAppAvailability(terminalApp: TerminalApp): Promise<boolea
  * Execute a command in the user's preferred terminal application
  */
 export async function executeInTerminal(command: string): Promise<{ success: boolean; terminalUsed: string }> {
-  // 防重复执行检查
+  // Prevent duplicate execution check
   if (isExecuting) {
     return { success: false, terminalUsed: "Blocked (already executing)" };
   }

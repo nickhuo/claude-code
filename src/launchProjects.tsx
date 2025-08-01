@@ -242,22 +242,31 @@ function ProjectItem({ project }: { project: ProjectInfo }) {
             title="Open with Claude Code"
             icon={Icon.Terminal}
             onAction={async () => {
-              if (!project.exists) {
-                showToast({
+              try {
+                if (!project.exists) {
+                  showToast({
+                    style: Toast.Style.Failure,
+                    title: "Project Not Found",
+                    message: `The project path ${project.path} no longer exists`,
+                  });
+                  return;
+                }
+
+                const command = `cd "${project.path}" && claude --add-dir "${project.path}"`;
+                const result = await executeInTerminal(command);
+
+                if (result.success) {
+                  await showTerminalSuccessToast(result.terminalUsed, `Claude Code with ${project.name}`);
+                } else {
+                  await showTerminalErrorToast(getManualCommand(command), `Claude Code with ${project.name}`);
+                }
+              } catch (error) {
+                console.error("Error opening project:", error);
+                await showToast({
                   style: Toast.Style.Failure,
-                  title: "Project Not Found",
-                  message: `The project path ${project.path} no longer exists`,
+                  title: "Launch Failed",
+                  message: error instanceof Error ? error.message : "Failed to open project",
                 });
-                return;
-              }
-
-              const command = `cd "${project.path}" && claude --add-dir "${project.path}"`;
-              const result = await executeInTerminal(command);
-
-              if (result.success) {
-                await showTerminalSuccessToast(result.terminalUsed, `Claude Code with ${project.name}`);
-              } else {
-                await showTerminalErrorToast(getManualCommand(command), `Claude Code with ${project.name}`);
               }
             }}
             shortcut={{ modifiers: [], key: "return" }}
@@ -295,11 +304,15 @@ function ProjectItem({ project }: { project: ProjectInfo }) {
             title="Manual Command"
             shortcut={{ modifiers: ["cmd"], key: "m" }}
             onAction={async () => {
-              await showToast({
-                style: Toast.Style.Animated,
-                title: "Manual Command",
-                message: `Run: claude --add-dir "${project.path}"`,
-              });
+              try {
+                await showToast({
+                  style: Toast.Style.Animated,
+                  title: "Manual Command",
+                  message: `Run: claude --add-dir "${project.path}"`,
+                });
+              } catch (error) {
+                console.error("Error showing manual command toast:", error);
+              }
             }}
           />
         </ActionPanel>

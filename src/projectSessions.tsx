@@ -503,11 +503,15 @@ export default function ProjectSessions({ projectDirectory, projectName, encoded
               <Action
                 title="Show Full Description"
                 onAction={async () => {
-                  await showToast({
-                    style: Toast.Style.Animated,
-                    title: "Session Description",
-                    message: session.description,
-                  });
+                  try {
+                    await showToast({
+                      style: Toast.Style.Animated,
+                      title: "Session Description",
+                      message: session.description,
+                    });
+                  } catch (error) {
+                    console.error("Error showing description toast:", error);
+                  }
                 }}
                 shortcut={{ modifiers: ["cmd"], key: "i" }}
               />
@@ -533,18 +537,27 @@ function ResumeSessionAction({ session }: { session: Session }) {
     <Action
       title="Resume Session"
       onAction={async () => {
-        const result = await executeInTerminal(resumeCommand);
+        try {
+          const result = await executeInTerminal(resumeCommand);
 
-        if (result.success) {
-          await showTerminalSuccessToast(
-            result.terminalUsed,
-            `Claude Code session in ${getProjectName(session.directory)}`,
-          );
-        } else {
-          await showTerminalErrorToast(
-            getManualCommand(resumeCommand),
-            `Claude Code session in ${getProjectName(session.directory)}`,
-          );
+          if (result.success) {
+            await showTerminalSuccessToast(
+              result.terminalUsed,
+              `Claude Code session in ${getProjectName(session.directory)}`,
+            );
+          } else {
+            await showTerminalErrorToast(
+              getManualCommand(resumeCommand),
+              `Claude Code session in ${getProjectName(session.directory)}`,
+            );
+          }
+        } catch (error) {
+          console.error("Error resuming session:", error);
+          await showToast({
+            style: Toast.Style.Failure,
+            title: "Resume Failed",
+            message: error instanceof Error ? error.message : "Failed to resume session",
+          });
         }
       }}
       icon={Icon.Play}
