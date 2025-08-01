@@ -12,7 +12,7 @@ import {
 } from "@raycast/api";
 import { showFailureToast } from "@raycast/utils";
 import { useState, useEffect, useMemo } from "react";
-import { readFileSync, writeFileSync, readdirSync, statSync, unlinkSync, mkdirSync } from "fs";
+import { readFileSync, writeFileSync, readdirSync, statSync, unlinkSync, mkdirSync, existsSync } from "fs";
 import { join, dirname, extname, basename } from "path";
 import { homedir } from "os";
 
@@ -232,6 +232,28 @@ class CommandScanner {
       throw error;
     }
   }
+
+  renameCommand(oldFilePath: string, newFilePath: string): void {
+    try {
+      // Read the old file content
+      const content = readFileSync(oldFilePath, "utf8");
+
+      // Write to new location
+      const dir = dirname(newFilePath);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(newFilePath, content, "utf8");
+
+      // Delete old file
+      unlinkSync(oldFilePath);
+    } catch (error) {
+      console.error("Error renaming command:", error);
+      throw error;
+    }
+  }
+
+  fileExists(filePath: string): boolean {
+    return existsSync(filePath);
+  }
 }
 
 // Main Component
@@ -409,8 +431,60 @@ function CommandForm({ command, scanner, onSave }: { command?: Command; scanner:
     try {
       const commandsDir = join(homedir(), ".claude", "commands");
       const fileType = isEditing ? command?.fileType || "md" : values.fileType || "md";
-      const fileName = `${values.name}.${fileType}`;
-      const filePath = join(commandsDir, fileName);
+
+      // Determine the final file path
+      let finalFilePath: string;
+      let needsRename = false;
+
+      if (isEditing && command) {
+        // For editing, check if name changed
+        const newFileName = `${values.name}.${fileType}`;
+        const newFilePath = join(commandsDir, newFileName);
+        const originalName = basename(command.filePath, `.${command.fileType}`);
+
+        if (values.name !== originalName) {
+          // Name changed, check for collisions
+          if (scanner.fileExists(newFilePath)) {
+            const confirmed = await confirmAlert({
+              title: "File Already Exists",
+              message: `A command named "${values.name}" already exists. This will overwrite the existing file.`,
+              primaryAction: {
+                title: "Overwrite",
+                style: Alert.ActionStyle.Destructive,
+              },
+            });
+
+            if (!confirmed) {
+              return;
+            }
+          }
+
+          finalFilePath = newFilePath;
+          needsRename = true;
+        } else {
+          // Name didn't change, keep original path
+          finalFilePath = command.filePath;
+        }
+      } else {
+        // For new commands, create the path and check for collisions
+        const fileName = `${values.name}.${fileType}`;
+        finalFilePath = join(commandsDir, fileName);
+
+        if (scanner.fileExists(finalFilePath)) {
+          const confirmed = await confirmAlert({
+            title: "File Already Exists",
+            message: `A command named "${values.name}" already exists. This will overwrite the existing file.`,
+            primaryAction: {
+              title: "Overwrite",
+              style: Alert.ActionStyle.Destructive,
+            },
+          });
+
+          if (!confirmed) {
+            return;
+          }
+        }
+      }
 
       // Parse custom parameters
       const customParams: Record<string, unknown> = {};
@@ -443,7 +517,7 @@ function CommandForm({ command, scanner, onSave }: { command?: Command; scanner:
         name: values.name,
         title: values.title,
         description: values.description,
-        filePath: command?.filePath || filePath,
+        filePath: finalFilePath,
         fileType,
         allowedTools: values.allowedTools ? values.allowedTools.split(",").map((s) => s.trim()) : [],
         content: values.content,
@@ -456,7 +530,16 @@ function CommandForm({ command, scanner, onSave }: { command?: Command; scanner:
         },
       };
 
-      scanner.saveCommand(newCommand);
+      // Handle file operations
+      if (isEditing && command && needsRename) {
+        // Rename the file (this will also save the new content)
+        scanner.renameCommand(command.filePath, finalFilePath);
+        // Now update the content with the new values
+        scanner.saveCommand(newCommand);
+      } else {
+        // Normal save operation
+        scanner.saveCommand(newCommand);
+      }
 
       await showToast({
         style: Toast.Style.Success,
