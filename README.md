@@ -19,18 +19,23 @@ Ensure the [Claude Code CLI](https://claude.ai/code) is installed and properly c
 ## Commands
 
 ### Session Search
+
 Browse and search through your Claude Code sessions with intelligent filtering. Parses JSONL session files from `~/.claude/projects` with memory management and timeout protection.
 
 ### Launch with Claude Code
+
 Launch Claude Code from Finder selections with multi-file/directory support. Uses AppleScript automation for Terminal launching with robust error handling.
 
 ### Launch Projects
+
 Manage and launch projects from your Claude Code project directory. Displays project availability status and provides launching with directory navigation.
 
 ### User Command Manager
+
 Create and manage custom commands stored in `~/.claude/commands`. Supports Markdown and YAML formats with custom parameter systems.
 
 ### User Agents Manager
+
 Create and manage Claude Code subagents in `~/.claude/agents`. Features tool specification, color organization, and system prompt editing.
 
 ## Claude Code Integration
