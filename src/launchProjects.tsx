@@ -1,6 +1,5 @@
 import { List, ActionPanel, Action, showToast, Toast, Icon } from "@raycast/api";
-import { showFailureToast } from "@raycast/utils";
-import { useState, useEffect } from "react";
+import { showFailureToast, useCachedPromise } from "@raycast/utils";
 import { readdir, readFile, stat } from "fs/promises";
 import { existsSync } from "fs";
 import { homedir } from "os";
@@ -27,60 +26,43 @@ interface SessionEntry {
   type?: string;
 }
 
-export default function LaunchClaudeProjects() {
-  const [projects, setProjects] = useState<ProjectInfo[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+const loadProjects = async (): Promise<ProjectInfo[]> => {
+  const projectsDir = path.join(homedir(), ".claude", "projects");
 
-  useEffect(() => {
-    loadProjects();
-  }, []);
+  if (!existsSync(projectsDir)) {
+    throw new Error("Claude Code projects directory not found. Have you used Claude Code before?");
+  }
 
-  const loadProjects = async () => {
+  const projectDirs = await readdir(projectsDir);
+  // Filter out non-directory items and system files
+  const validProjectDirs = [];
+  for (const dirName of projectDirs) {
+    if (dirName.startsWith(".")) continue; // Skip hidden files like .DS_Store
+    const dirPath = path.join(projectsDir, dirName);
     try {
-      const projectsDir = path.join(homedir(), ".claude", "projects");
-
-      if (!existsSync(projectsDir)) {
-        setError("Claude Code projects directory not found. Have you used Claude Code before?");
-        setIsLoading(false);
-        return;
+      const stats = await stat(dirPath);
+      if (stats.isDirectory()) {
+        validProjectDirs.push(dirName);
       }
-
-      const projectDirs = await readdir(projectsDir);
-      // Filter out non-directory items and system files
-      const validProjectDirs = [];
-      for (const dirName of projectDirs) {
-        if (dirName.startsWith(".")) continue; // Skip hidden files like .DS_Store
-        const dirPath = path.join(projectsDir, dirName);
-        try {
-          const stats = await stat(dirPath);
-          if (stats.isDirectory()) {
-            validProjectDirs.push(dirName);
-          }
-        } catch {
-          // Skip if we can't stat the item
-          continue;
-        }
-      }
-
-      const projectPromises = validProjectDirs.map(async (dirName) => {
-        return await parseProject(path.join(projectsDir, dirName), dirName);
-      });
-
-      const parsedProjects = (await Promise.all(projectPromises))
-        .filter((project): project is ProjectInfo => project !== null)
-        .filter((project) => project.exists) // Filter out missing projects
-        .sort((a, b) => b.lastActivity.getTime() - a.lastActivity.getTime());
-
-      setProjects(parsedProjects);
-    } catch (err) {
-      setError(`Failed to load projects: ${err instanceof Error ? err.message : "Unknown error"}`);
-    } finally {
-      setIsLoading(false);
+    } catch {
+      // Skip if we can't stat the item
+      continue;
     }
-  };
+  }
 
-  const parseProject = async (projectDir: string, encodedDirName: string): Promise<ProjectInfo | null> => {
+  const projectPromises = validProjectDirs.map(async (dirName) => {
+    return await parseProject(path.join(projectsDir, dirName), dirName);
+  });
+
+  const parsedProjects = (await Promise.all(projectPromises))
+    .filter((project): project is ProjectInfo => project !== null)
+    .filter((project) => project.exists) // Filter out missing projects
+    .sort((a, b) => b.lastActivity.getTime() - a.lastActivity.getTime());
+
+  return parsedProjects;
+};
+
+const parseProject = async (projectDir: string, encodedDirName: string): Promise<ProjectInfo | null> => {
     try {
       // Get all .jsonl files in the project directory
       const files = await readdir(projectDir);
@@ -125,48 +107,47 @@ export default function LaunchClaudeProjects() {
     }
   };
 
-  const extractProjectPath = async (jsonlFilePath: string): Promise<string | null> => {
-    try {
-      const content = await readFile(jsonlFilePath, "utf-8");
-      const lines = content.trim().split("\n");
+const extractProjectPath = async (jsonlFilePath: string): Promise<string | null> => {
+  try {
+    const content = await readFile(jsonlFilePath, "utf-8");
+    const lines = content.trim().split("\n");
 
-      // Parse each line and look for cwd field
-      for (const line of lines) {
-        if (line.trim()) {
-          try {
-            const entry: SessionEntry = JSON.parse(line);
-            if (entry.cwd && entry.cwd !== "/") {
-              return entry.cwd;
-            }
-          } catch {
-            // Skip malformed JSON lines
-            continue;
+    // Parse each line and look for cwd field
+    for (const line of lines) {
+      if (line.trim()) {
+        try {
+          const entry: SessionEntry = JSON.parse(line);
+          if (entry.cwd && entry.cwd !== "/") {
+            return entry.cwd;
           }
+        } catch {
+          // Skip malformed JSON lines
+          continue;
         }
       }
-
-      return null;
-    } catch {
-      return null;
     }
-  };
+
+    return null;
+  } catch {
+    return null;
+  }
+};
+
+export default function LaunchClaudeProjects() {
+  const { data: projects = [], isLoading, error, revalidate } = useCachedPromise(loadProjects);
 
   if (error) {
     return (
       <List>
         <List.Item
           title="Error Loading Projects"
-          subtitle={error}
+          subtitle={error.message}
           icon="⚠️"
           actions={
             <ActionPanel>
               <Action
                 title="Retry"
-                onAction={() => {
-                  setError(null);
-                  setIsLoading(true);
-                  loadProjects();
-                }}
+                onAction={revalidate}
               />
               <Action.OpenInBrowser
                 title="Claude Code Documentation"
@@ -268,6 +249,11 @@ function ProjectItem({ project }: { project: ProjectInfo }) {
             }}
             shortcut={{ modifiers: [], key: "return" }}
           />
+          <Action.CopyToClipboard
+            title="Copy Claude Command"
+            content={`cd "${project.path}" && claude --add-dir "${project.path}"`}
+            shortcut={{ modifiers: ["cmd"], key: "return" }}
+          />
           <Action.Push
             title="View Project Sessions"
             target={
@@ -279,11 +265,6 @@ function ProjectItem({ project }: { project: ProjectInfo }) {
             }
             icon={Icon.List}
             shortcut={{ modifiers: ["cmd"], key: "o" }}
-          />
-          <Action.CopyToClipboard
-            title="Copy Claude Command"
-            content={`cd "${project.path}" && claude --add-dir "${project.path}"`}
-            shortcut={{ modifiers: ["cmd"], key: "return" }}
           />
           <Action.CopyToClipboard
             title="Copy Path"
